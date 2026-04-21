@@ -1,11 +1,9 @@
 import NextAuth from "next-auth"
-import { PrismaAdapter } from "@auth/prisma-adapter"
-import { prisma } from "@/lib/prisma"
+import type { NextAuthOptions } from "next-auth"
 import CredentialsProvider from "next-auth/providers/credentials"
-import bcrypt from "bcryptjs"
+import { supabaseAdmin } from "@/lib/supabaseClient"
 
-export const authOptions = {
-  adapter: PrismaAdapter(prisma),
+export const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
       name: "Credentials",
@@ -16,9 +14,16 @@ export const authOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null
 
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email }
-        })
+        const { data: user, error } = await supabaseAdmin
+          .from("users")
+          .select("id, email, name, password")
+          .eq("email", credentials.email)
+          .maybeSingle()
+
+        if (error) {
+          console.error("Auth lookup error", error)
+          return null
+        }
 
         if (!user) return null
         
@@ -31,13 +36,16 @@ export const authOptions = {
       }
     })
   ],
+  session: {
+    strategy: "jwt",
+  },
   pages: { signIn: '/login' },
   callbacks: {
-    async jwt({ token, user }: any) {
+    async jwt({ token, user }) {
       if (user) token.id = user.id
       return token
     },
-    async session({ session, token }: any) {
+    async session({ session, token }) {
       if (session.user) session.user.id = token.id as string
       return session
     }
